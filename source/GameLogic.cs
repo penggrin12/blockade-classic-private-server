@@ -1,12 +1,12 @@
 using System;
 using System.Threading.Tasks;
 using BlockadeClassicPrivateServer.Interfaces;
-using BlockadeClassicPrivateServer.Net.Shared;
+using BlockadeClassicPrivateServer.Shared;
 using Godot;
 
 namespace BlockadeClassicPrivateServer;
 
-public class GameLogic(IPacketSender packetSender, IPlayerQuery playersQuery, IGameManager gameManager, IWorldVoxelQuery worldVoxelQuery) : IGameLogic
+public class GameLogic(IPacketSender packetSender, IGameModeQuery gameModeQuery, IGameScoreQuery gameScoreQuery, IGameScoreCommand gameScoreCommand, IPlayerQuery playersQuery, IWorldVoxelQuery worldVoxelQuery) : IPlayerLogic, IEntityLogic, IPlayerDisconnector, IChatSender
 {
 	public void SpawnPlayer(
 		Player player,
@@ -18,7 +18,7 @@ public class GameLogic(IPacketSender packetSender, IPlayerQuery playersQuery, IG
 		{
 			player.IsSpawned = true;
 			player.Health = Player.MaxHealth;
-			player.Position = gameManager.GetGameMode() == GameMode.Build ? new Vector3I(128, 63, 128) : worldVoxelQuery.FindSpawnPoint(player.Team);
+			player.Position = gameModeQuery.GetGameMode() == GameMode.Build ? new Vector3I(128, 63, 128) : worldVoxelQuery.FindSpawnPoint(player.Team);
 		}
 
 		if (at is not null) player.Position = at.Value;
@@ -60,8 +60,8 @@ public class GameLogic(IPacketSender packetSender, IPlayerQuery playersQuery, IG
 		respawnPacket.Write<int>(ItemsDB.GetReserveSize(player.WeaponPrimary));		// Backpack (reserve primary ammo)
 		respawnPacket.Write<int>(ItemsDB.GetClipSize(player.WeaponSecondary));		// ClipAmmo2 (clip secondary ammo) (^ same here)
 		respawnPacket.Write<int>(ItemsDB.GetReserveSize(player.WeaponSecondary));	// Backpack2 (reserve secondary ammo)
-		respawnPacket.Write<int>(gameManager.GetGameMode() == GameMode.Build ? 0 : 200);	// BlockAmmo (amount of blocks available)
-		respawnPacket.Write<int>((int)gameManager.ScoreUpdateTimer.TimeLeft);
+		respawnPacket.Write<int>(gameModeQuery.GetGameMode() == GameMode.Build ? 0 : 200);	// BlockAmmo (amount of blocks available)
+		respawnPacket.Write<int>(gameScoreQuery.GetRemainingTime());
 		respawnPacket.Write<int>(player.WeaponUtility1 == ItemName.Mortar ? 6 : (player.WeaponUtility1 == ItemName.Shmel ? 1 : 4));
 		respawnPacket.Write<int>(player.AmmoUtility2);
 		respawnPacket.Write<int>(player.AmmoUtility3);
@@ -113,7 +113,7 @@ public class GameLogic(IPacketSender packetSender, IPlayerQuery playersQuery, IG
 
 	public bool DamageZombie(int zombieEntityIndex, Player? attacker, int amount, ItemName weaponId, BodyPart hitbox = BodyPart.Spine)
 	{
-		if (gameManager.GetGameMode() != GameMode.Survival) return false;
+		if (gameModeQuery.GetGameMode() != GameMode.Survival) return false;
 
 		// TODO
 
@@ -122,7 +122,7 @@ public class GameLogic(IPacketSender packetSender, IPlayerQuery playersQuery, IG
 
 	public bool DamagePlayer(Player victim, Player? attacker, int amount, ItemName weaponId, BodyPart hitbox = BodyPart.Spine, bool allowRespawn = true)
 	{
-		if ((gameManager.GetGameMode() == GameMode.Build) || (gameManager.GetGameMode() == GameMode.Survival)) return false;
+		if ((gameModeQuery.GetGameMode() == GameMode.Build) || (gameModeQuery.GetGameMode() == GameMode.Survival)) return false;
 		if (!victim.IsAlive) return true;
 		if (attacker == victim) attacker = null;
 		if ((attacker is not null) && (attacker.Team == victim.Team)) return false;
@@ -149,8 +149,8 @@ public class GameLogic(IPacketSender packetSender, IPlayerQuery playersQuery, IG
 				statsPacket.Write<int>(victim.Deaths);
 				packetSender.BroadcastPacket(statsPacket);
 
-				if (gameManager.GetGameMode() == GameMode.Classic)
-					gameManager.AddTeamScore(attacker.Team, 1);
+				if (gameModeQuery.GetGameMode() == GameMode.Classic)
+					gameScoreCommand.AddTeamScore(attacker.Team, 1);
 			}
 
 			if (allowRespawn)

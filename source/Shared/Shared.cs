@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using Godot;
 
-namespace BlockadeClassicPrivateServer.Net.Shared;
+namespace BlockadeClassicPrivateServer.Shared;
 
 public static class ItemsDB
 {

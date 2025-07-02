@@ -1,4 +1,4 @@
-using BlockadeClassicPrivateServer.Net.Shared;
+using BlockadeClassicPrivateServer.Shared;
 
 namespace BlockadeClassicPrivateServer.Voxel;
 

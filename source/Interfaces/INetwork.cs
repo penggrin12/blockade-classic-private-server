@@ -1,6 +1,6 @@
 using System;
 using System.Threading.Tasks;
-using BlockadeClassicPrivateServer.Net.Shared;
+using BlockadeClassicPrivateServer.Shared;
 
 namespace BlockadeClassicPrivateServer.Interfaces;
 

@@ -3,15 +3,16 @@ using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using BlockadeClassicPrivateServer.Interfaces;
-using BlockadeClassicPrivateServer.Net.Shared;
+using BlockadeClassicPrivateServer.Shared;
 using Godot;
 
 namespace BlockadeClassicPrivateServer;
 
-public class PlayerManager : IHasPlayerLimit, IPlayerQuery, IPlayerCommand
+public class PlayerManager : IPlayerQuery, IPlayerCommand
 {
 	private const int _MaxPlayers = 32;
-	public int MaxPlayers => _MaxPlayers;
+	public int Max => _MaxPlayers;
+	public int Count => Players.Count;
 
 	private ConcurrentDictionary<int, Player> Players { get; init; } = [];
 
@@ -23,7 +24,6 @@ public class PlayerManager : IHasPlayerLimit, IPlayerQuery, IPlayerCommand
 		throw new IndexOutOfRangeException($"Couldn't find a new player index. Too many players online? ({Players.Count}/{_MaxPlayers})");
 	}
 
-	public int GetPlayerCount() => Players.Count;
 	public ICollection<Player> GetPlayers() => Players.Values;
 	public IEnumerable<Player> GetPlayersInRadius(Vector3 at, float radius) => Players.Values.Where(x => x.IsSpawned && x.IsAlive && (at.DistanceTo(x.Position) <= radius));
 
@@ -33,15 +33,15 @@ public class PlayerManager : IHasPlayerLimit, IPlayerQuery, IPlayerCommand
 		return player;
 	}
 
-	public Player CreatePlayer()
+	public Player? CreatePlayer()
 	{
 		Player player = new Player() { Index = FindFreePlayerIndex(), Name = $"Guest{GD.Randi() % 100000}" };
-		Players.TryAdd(player.Index, player);
-		return player;
+		bool success = Players.TryAdd(player.Index, player);
+		return success ? player : null;
 	}
 
-	public void RemovePlayer(int playerIndex)
+	public bool RemovePlayer(int playerIndex)
 	{
-		Players.Remove(playerIndex, out _);
+		return Players.Remove(playerIndex, out _);
 	}
 }

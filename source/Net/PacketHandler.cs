@@ -1,7 +1,7 @@
-using System.Collections.Generic;
+using System;
 using System.Threading.Tasks;
 using BlockadeClassicPrivateServer.Interfaces;
-using BlockadeClassicPrivateServer.Net.Shared;
+using BlockadeClassicPrivateServer.Shared;
 using BlockadeClassicPrivateServer.Voxel;
 using Godot;
 using Ionic.Zlib;
@@ -10,12 +10,14 @@ namespace BlockadeClassicPrivateServer.Net;
 
 public static class PacketHandler
 {
-	public static async Task RecvEndOfSnap(Player player, Packet recvPacket)
+	public static event Action<Player, string[]>? CommandReceived;
+
+	public static async Task RecvEndOfSnap(IPlayerDisconnector playerDisconnector, Player player, Packet recvPacket)
 	{
-		// await server.DisconnectPlayer(player, false);
+		await playerDisconnector.DisconnectPlayer(player, false);
 	}
 
-	public static void RecvAuth(IPacketSender packetSender, IGameManager gameManager, Player player, Packet recvPacket)
+	public static void RecvAuth(IPacketSender packetSender, IGameModeQuery gameModeQuery, IMapIdQuery mapIdQuery, Player player, Packet recvPacket)
 	{
 		player.Country = (Flag)recvPacket.Read<byte>();
 		player.Network = (Network)recvPacket.Read<byte>();
@@ -27,8 +29,8 @@ public static class PacketHandler
 		//  (string)  PlayerProfile.gameSession
 
 		Packet authPacket = Packet.Create(PacketName.Auth);
-		authPacket.Write<byte>((byte)gameManager.GetGameMode()); // game mode
-		authPacket.WriteString(gameManager.GetMapId()); // was originally: "1" (citadel)
+		authPacket.Write<byte>((byte)gameModeQuery.GetGameMode()); // game mode
+		authPacket.WriteString(mapIdQuery.GetMapId()); // was originally: "1" (citadel)
 		packetSender.SendPacket(player.Index, authPacket);
 
 		// MapData (radar data im assuming)
@@ -58,7 +60,7 @@ public static class PacketHandler
 		packetSender.SendPacket(player.Index, Packet.Create(PacketName.ChunkFinish));
 	}
 
-	public static async Task RecvMyInfo(IPacketSender packetSender, IGameLogic gameLogic, IPlayerQuery playerQuery, IGameManager gameManager, Player player, Packet recvPacket)
+	public static async Task RecvMyInfo(IPacketSender packetSender, IPlayerLogic playerLogic, IPlayerQuery playerQuery, IGameModeQuery gameModeQuery, Player player, Packet recvPacket)
 	{
 		Packet myInfoPacket = Packet.Create(PacketName.MyInfo);
 
@@ -313,13 +315,13 @@ public static class PacketHandler
 			packetSender.SendPacket(player, PlayerInfoGenerator(otherPlayer));
 
 			if (otherPlayer.IsSpawned)
-				gameLogic.SpawnPlayer(otherPlayer, forWhom: player.Index);
+				playerLogic.SpawnPlayer(otherPlayer, forWhom: player.Index);
 		}
 
 		packetSender.BroadcastPacket(PlayerInfoGenerator(player), player.Index);
 
-		if (gameManager.GetGameMode() == GameMode.Build)
-			gameLogic.SpawnPlayer(player);
+		if (gameModeQuery.GetGameMode() == GameMode.Build)
+			playerLogic.SpawnPlayer(player);
 	}
 
 	public static void RecvPosition(IPacketSender packetSender, Player player, Packet recvPacket)
@@ -346,13 +348,13 @@ public static class PacketHandler
 		packetSender.BroadcastPacket(positionPacket);
 	}
 
-	public static void RecvJoinTeamClass(IPacketSender packetSender, IGameLogic gameLogic, Player player, Packet recvPacket)
+	public static void RecvJoinTeamClass(IPacketSender packetSender, IPlayerLogic playerLogic, Player player, Packet recvPacket)
 	{
 		player.Team = (Team)recvPacket.Read<byte>();
 
 		// TODO
 		if (player.IsSpawned)
-			gameLogic.DamagePlayer(player, null, Player.MaxHealth, ItemName.Default_Death, allowRespawn: false);
+			playerLogic.DamagePlayer(player, null, Player.MaxHealth, ItemName.Default_Death, allowRespawn: false);
 
 		Packet joinTeamClassPacket = Packet.Create(PacketName.JoinTeamClass);
 		joinTeamClassPacket.Write<byte>((byte)player.Index);
@@ -360,7 +362,7 @@ public static class PacketHandler
 		packetSender.BroadcastPacket(joinTeamClassPacket);
 	}
 
-	public static void RecvNewConfig(IPacketSender packetSender, IPlayerQuery playerQuery, IGameLogic gameLogic, Player player, Packet recvPacket)
+	public static void RecvNewConfig(IPacketSender packetSender, IPlayerQuery playerQuery, IPlayerLogic gameLogic, Player player, Packet recvPacket)
 	{
 		player.WeaponMelee = (ItemName)recvPacket.Read<int>();
 		player.WeaponPrimary = (ItemName)recvPacket.Read<int>();
@@ -461,7 +463,7 @@ public static class PacketHandler
 		packetSender.BroadcastPacket(currentWeaponPacket);
 	}
 
-	public static void RecvDamage(IGameManager gameManager, IGameLogic gameLogic, IPlayerQuery playerQuery, Player player, Packet recvPacket)
+	public static void RecvDamage(IGameModeQuery gameModeQuery, IPlayerLogic playerLogic, IEntityLogic entityLogic, IPlayerQuery playerQuery, Player player, Packet recvPacket)
 	{
 		ItemName weaponId = (ItemName)recvPacket.Read<int>();
 		int victimIndex = recvPacket.Read<int>();
@@ -483,9 +485,9 @@ public static class PacketHandler
 		if (hitShield)
 			damage = 0;
 
-		if (gameManager.GetGameMode() == GameMode.Survival)
+		if (gameModeQuery.GetGameMode() == GameMode.Survival)
 		{
-			gameLogic.DamageZombie(victimIndex, player, damage, weaponId, hitbox);
+			entityLogic.DamageZombie(victimIndex, player, damage, weaponId, hitbox);
 		}
 		else
 		{
@@ -496,23 +498,24 @@ public static class PacketHandler
 				return;
 			}
 
-			gameLogic.DamagePlayer(victim, player, damage, weaponId, hitbox);
+			playerLogic.DamagePlayer(victim, player, damage, weaponId, hitbox);
 		}
 	}
 
-	public static async Task RecvChat(IGameLogic gameLogic, Player player, Packet recvPacket)
+	public static void RecvChat(IChatSender chatSender, Player player, Packet recvPacket)
 	{
 		bool teamSay = recvPacket.Read<byte>() == 1;
 		string text = recvPacket.ReadString();
 
-		// if (text[0] == '/')
-		// {
-		// 	await ServerCommandHandling.HandleCommand(player, text[1..].Split(' '));
-		// 	return;
-		// }
+		if (text[0] == '/')
+		{
+			// await ServerCommandHandling.HandleCommand(player, text[1..].Split(' '));
+			CommandReceived?.Invoke(player, text[1..].Split(' '));
+			return;
+		}
 
 		GD.Print($"[CHAT{(teamSay ? $" TEAM: {player.Team}" : "")}] <{player.Name}>: {text}");
-		gameLogic.SendChatMessage(null, player, teamSay, text);
+		chatSender.SendChatMessage(null, player, teamSay, text);
 	}
 
 	public static void RecvCreateEntity(IEntityCommand entityCommand, Player player, Packet recvPacket)
@@ -580,8 +583,12 @@ public static class PacketHandler
 	public static async Task HandlePacket(
 		Player player,
 		Packet recvPacket,
-		IGameLogic gameLogic,
-		IGameManager gameManager,
+		IPlayerDisconnector playerDisconnector,
+		IPlayerLogic playerLogic,
+		IEntityLogic entityLogic,
+		IChatSender chatSender,
+		IGameModeQuery gameModeQuery,
+		IMapIdQuery mapIdQuery,
 		IPacketSender packetSender,
 		IEntityQuery entityQuery,
 		IEntityCommand entityCommand,
@@ -600,10 +607,10 @@ public static class PacketHandler
 		switch (recvPacket.Name)
 		{
 			case PacketName.EndOfSnap: // player disconnects
-				await RecvEndOfSnap(player, recvPacket);
+				await RecvEndOfSnap(playerDisconnector, player, recvPacket);
 				break;
 			case PacketName.Auth:          // #0 - step 1
-				RecvAuth(packetSender, gameManager, player, recvPacket);
+				RecvAuth(packetSender, gameModeQuery, mapIdQuery, player, recvPacket);
 				break;
 			case PacketName.BlockInfo:     // #5 - step 2
 										   // send changes
@@ -611,16 +618,16 @@ public static class PacketHandler
 				break;
 			case PacketName.MyInfo:        // #3 - step 3
 										   // send their profile (MyData)
-				await RecvMyInfo(packetSender, gameLogic, playerQuery, gameManager, player, recvPacket);
+				await RecvMyInfo(packetSender, playerLogic, playerQuery, gameModeQuery, player, recvPacket);
 				break;
 			case PacketName.JoinTeamClass: // #9 - optional step 4
-				RecvJoinTeamClass(packetSender, gameLogic, player, recvPacket);
+				RecvJoinTeamClass(packetSender, playerLogic, player, recvPacket);
 				break;
 			case PacketName.Position:
 				RecvPosition(packetSender, player, recvPacket);
 				break;
 			case PacketName.NewConfig:
-				RecvNewConfig(packetSender, playerQuery, gameLogic, player, recvPacket);
+				RecvNewConfig(packetSender, playerQuery, playerLogic, player, recvPacket);
 				break;
 			case PacketName.BlockAttack:
 				RecvBlockAttack(packetSender, worldVoxelCommand, player, recvPacket);
@@ -635,10 +642,10 @@ public static class PacketHandler
 				RecvCurrentWeapon(packetSender, player, recvPacket);
 				break;
 			case PacketName.Damage:
-				RecvDamage(gameManager, gameLogic, playerQuery, player, recvPacket);
+				RecvDamage(gameModeQuery, playerLogic, entityLogic, playerQuery, player, recvPacket);
 				break;
 			case PacketName.Chat:
-				await RecvChat(gameLogic, player, recvPacket);
+				RecvChat(chatSender, player, recvPacket);
 				break;
 			case PacketName.CreateEntity:
 				RecvCreateEntity(entityCommand, player, recvPacket);

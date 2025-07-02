@@ -2,9 +2,9 @@ using System.Threading.Tasks;
 using BlockadeClassicPrivateServer.Interfaces;
 using Godot;
 
-namespace BlockadeClassicPrivateServer.Net.Shared;
+namespace BlockadeClassicPrivateServer.Shared;
 
-public sealed class Entity(IPacketSender packetSender, IGameManager gameManager, IPlayerQuery playerQuery, IEntityCommand entityCommand, IGameLogic gameLogic)
+public sealed class Entity(IPacketSender packetSender, IPlayerQuery playerQuery, IEntityCommand entityCommand, IPlayerLogic gameLogic)
 {
 	[Export] public required int Index { get; set; }
 	[Export] public required int OwnerPlayerIndex { get; set; }
@@ -37,17 +37,16 @@ public sealed class Entity(IPacketSender packetSender, IGameManager gameManager,
 
 	private async Task GazSmokeDamage()
 	{
-		Callable gazDamager = Callable.From(() =>
+		await Task.Delay(2500);
+
+		// give damage every second for 20 seconds
+		for (var i = 0; i < 20; i++)
 		{
-			// TODO: it should also check for the player's skin... but i don't like that
 			foreach (Player player in playerQuery.GetPlayersInRadius(Position, 8))
 				gameLogic.DamagePlayer(player, playerQuery.GetPlayer(OwnerPlayerIndex), 20, ItemName.M7a2);
-		});
+			await Task.Delay(1000);
+		}
 
-		await Task.Delay(2500);
-		gameManager.ScoreUpdateTimer.CallThreadSafe(Timer.MethodName.Connect, Timer.SignalName.Timeout, gazDamager);
-		await Task.Delay(20000);
-		gameManager.ScoreUpdateTimer.CallThreadSafe(Timer.MethodName.Disconnect, Timer.SignalName.Timeout, gazDamager);
 		entityCommand.RemoveEntity(Index);
 	}
 

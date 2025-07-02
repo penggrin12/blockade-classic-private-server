@@ -1,6 +1,6 @@
 using System.Collections.Generic;
 using BlockadeClassicPrivateServer.Interfaces;
-using BlockadeClassicPrivateServer.Net.Shared;
+using BlockadeClassicPrivateServer.Shared;
 using Godot;
 
 namespace BlockadeClassicPrivateServer.Voxel;

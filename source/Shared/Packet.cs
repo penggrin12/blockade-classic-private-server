@@ -3,36 +3,31 @@ using System.Runtime.InteropServices;
 using System.Text;
 using Godot;
 
-namespace BlockadeClassicPrivateServer.Net.Shared;
+namespace BlockadeClassicPrivateServer.Shared;
 
-// has to be a resource to be transmitted via godot's signals
-public sealed partial class Packet : Resource
+public sealed class Packet
 {
 	// TODO: handle optional timestamp in header properly
 	// the timestamp is only missing on packet #16 (Client.DisconnectByError)
 	// but.. that's never called...?
 
 	public const byte MagicByte = 245; // 0xf5
+	public const int HeaderLength = (sizeof(byte) * 2) + sizeof(ushort);
 	public const int WriteBufferSize = 1_048_576; // client can receive 1_048_576, and send only 1025
 	public const int ReadBufferSize = 1_025;
 
-	[Export] private int seekPosition = 0;
-	[Export] private byte[] packetBuffer;
+	private int seekPosition = 0;
+	private readonly byte[] packetBuffer;
 
-	[Export] private bool isWriting = false;
+	private bool isWriting = false;
 
 	public PacketName Name => (PacketName)packetBuffer[sizeof(byte)];
 	public ushort Length => GetLength();
 	// public int Time { get { byte[] buffer = new byte[sizeof(int)]; Buffer.BlockCopy(sendBuffer, (sizeof(byte) * 2) + sizeof(ushort), buffer, 0, buffer.Length); return BitConverter.ToInt32(buffer); } }
 
-	// to satisfy godot
-	#pragma warning disable CS8618
-	[Obsolete("do not use this", error: true)] private Packet() {}
-	#pragma warning restore CS8618
-
-	private Packet(bool isForWriting)
+	private Packet(int bufferSize)
 	{
-		packetBuffer = new byte[isForWriting ? WriteBufferSize : ReadBufferSize];
+		packetBuffer = new byte[bufferSize];
 	}
 
 	public override string ToString()
@@ -216,7 +211,7 @@ public sealed partial class Packet : Resource
 
 	public static Packet Create(PacketName packetName)
 	{
-		Packet instance = new(true);
+		Packet instance = new(WriteBufferSize);
 
 		// header
 		instance.Write<byte>(MagicByte);
@@ -227,25 +222,9 @@ public sealed partial class Packet : Resource
 		return instance;
 	}
 
-	public static Packet Parse(StreamPeerTcp peer)
-	{
-		// assuming magic byte is already consumed
-		byte cmd = peer.GetU8();
-
-		// it starts counting from (and including) magic byte
-		ushort length = (ushort)(peer.GetU16() - (sizeof(byte) * 2) - sizeof(ushort));
-
-		// int time = peer.Get32(); // in ms since client game start
-
-		byte[] arr = new byte[ReadBufferSize - (sizeof(byte) * 2) - sizeof(ushort)];
-		for (var i = 0; i < length; i++)
-			arr[i] = peer.GetU8();
-
-		return Parse(cmd, length, arr);
-	}
 	public static Packet Parse(byte packetName, ushort length, byte[] arr)
 	{
-		Packet instance = new(false);
+		Packet instance = new(ReadBufferSize);
 
 		// header
 		instance.Write<byte>(MagicByte);
@@ -258,8 +237,17 @@ public sealed partial class Packet : Resource
 		instance.WriteBytes(arr);
 
 		// seek back past header
-		instance.seekPosition = (sizeof(byte) * 2) + sizeof(ushort);
+		instance.seekPosition = HeaderLength;
 
 		return instance;
+	}
+
+	public Packet Clone()
+	{
+		Packet copy = new(packetBuffer.Length);
+		Buffer.BlockCopy(packetBuffer, 0, copy.packetBuffer, 0, packetBuffer.Length);
+		copy.seekPosition = seekPosition;
+		copy.isWriting = isWriting;
+		return copy;
 	}
 }

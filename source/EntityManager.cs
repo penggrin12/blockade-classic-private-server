@@ -1,12 +1,12 @@
 using System;
 using System.Collections.Generic;
 using BlockadeClassicPrivateServer.Interfaces;
-using BlockadeClassicPrivateServer.Net.Shared;
+using BlockadeClassicPrivateServer.Shared;
 using Godot;
 
 namespace BlockadeClassicPrivateServer;
 
-public class EntityManager(IPacketSender packetSender, IGameManager gameManager, IGameLogic gameLogic, IPlayerQuery playerQuery) : IHasEntityLimit, IEntityQuery, IEntityCommand
+public class EntityManager(IPacketSender packetSender, IPlayerLogic gameLogic, IPlayerQuery playerQuery) : IHasEntityLimit, IEntityQuery, IEntityCommand
 {
 	private const int _MaxEntities = 32;
 	public int MaxEntities => _MaxEntities;
@@ -42,7 +42,7 @@ public class EntityManager(IPacketSender packetSender, IGameManager gameManager,
 
 	public Entity CreateEntity(EntityName name, int ownerPlayerIndex, Vector3 position, Vector3 rotation, Vector3 force, Vector3 torque)
 	{
-		Entity entity = new(packetSender, gameManager, playerQuery, this, gameLogic)
+		Entity entity = new(packetSender, playerQuery, this, gameLogic)
 		{
 			Index = FindFreeEntityIndex(),
 			OwnerPlayerIndex = ownerPlayerIndex,
@@ -68,7 +68,7 @@ public class EntityManager(IPacketSender packetSender, IGameManager gameManager,
 		createEntityPacket.WriteVectorFloat(entity.Torque);
 		packetSender.BroadcastPacket(createEntityPacket);
 
-		// entity.OnSpawn(this);
+		entity.OnSpawn();
 
 		return entity;
 	}

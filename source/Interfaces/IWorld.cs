@@ -1,5 +1,5 @@
 using System.Collections.Generic;
-using BlockadeClassicPrivateServer.Net.Shared;
+using BlockadeClassicPrivateServer.Shared;
 using BlockadeClassicPrivateServer.Voxel;
 using Godot;
 
